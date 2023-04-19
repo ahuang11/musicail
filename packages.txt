@@ -1,1 +1,2 @@
 musescore
+libasound2-dev
