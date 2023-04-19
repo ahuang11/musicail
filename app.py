@@ -16,7 +16,7 @@ from music21.stream import Part, Score, Stream
 from PIL import Image, ImageChops, ImageOps
 import pygame
 
-pygame.mixer.init(driver='pulseaudio')
+pygame.init()
 
 
 def is_subclass(obj: object) -> bool:
