@@ -234,7 +234,7 @@ def show_image(musical_notes: Optional[str] = None, stream: Optional[Stream] = N
         st.error(f"Parsing error; cannot render the part: {e}.")
         return
     with Image.open(image_path) as part_image:
-        return st.image(trim(part_image), use_column_width=True)
+        return st.image(trim(part_image), use_column_width=True, output_format="JPEG")
 
 
 def create_part_inputs(
