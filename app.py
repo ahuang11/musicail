@@ -1,7 +1,8 @@
 import os
+import sys
 import random
 import subprocess
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 from tempfile import NamedTemporaryFile
 from textwrap import dedent
 from uuid import uuid4
@@ -11,11 +12,19 @@ from langchain import LLMChain, OpenAI, PromptTemplate
 from music21 import environment, instrument
 from music21.converter import parse
 from music21.midi.realtime import StreamPlayer
-from music21.stream import Part, Score
+from music21.stream import Part, Score, Stream
 from PIL import Image, ImageChops, ImageOps
 
 
-def is_subclass(obj):
+def is_subclass(obj: object) -> bool:
+    """Checks if an object is a subclass of `instrument.Instrument`.
+
+    Args:
+        obj: The object to check.
+
+    Returns:
+        A boolean indicating whether the object is a subclass of `instrument.Instrument`.
+    """
     try:
         return issubclass(obj, instrument.Instrument)
     except TypeError:
@@ -48,8 +57,11 @@ TEMPLATE = dedent(
     ```
     """
 ).strip()
-MSCORE_PATH = "/opt/homebrew/bin/mscore"
-environment.set("musescoreDirectPNGPath", MSCORE_PATH)
+
+if sys.platform == "darwin":
+    MSCORE_PATH = "/opt/homebrew/bin/mscore"
+    environment.set("musescoreDirectPNGPath", MSCORE_PATH)
+
 INSTRUMENT_OPTIONS = [
     var_name
     for var_name in dir(instrument)
@@ -77,7 +89,12 @@ INSTRUCTIONS = """
 """
 
 
-def hear_stream(stream):
+def play_stream(stream: Stream) -> None:
+    """Plays a stream using the StreamPlayer.
+
+    Args:
+        stream: The stream to play.
+    """
     player = StreamPlayer(stream)
     if player.pygame.mixer.music.get_busy():
         player.stop()
@@ -85,17 +102,31 @@ def hear_stream(stream):
         player.play(blocked=False)
 
 
-def hear_stream_inputs(stream, key):
+def play_stream_inputs(stream: Stream, key: str):
+    """Displays a button that plays or pauses a stream when clicked.
+
+    Args:
+        stream: The stream to play.
+        key: The key for the button.
+    """
     label = "part" if "part" in key else "song"
     if st.button(f"🔊 Play or pause {label}.", key=key, use_container_width=True):
         if len(stream.flat.notes) == 0:
             st.error(f"The {label} is empty! Please first enter some musical notes.")
             return
-        hear_stream(stream)
+        play_stream(stream)
 
 
 @st.cache_data
-def format_keys(part_id):
+def format_keys(part_id: str) -> Dict[str, str]:
+    """Formats a set of keys based on a given part ID.
+
+    Args:
+        part_id (str): The ID of the part to format the keys for.
+
+    Returns:
+        dict: A dictionary of formatted keys.
+    """
     return {
         "musical_notes": f"musical_notes_{part_id}",
         "instrument_name": f"instrument_name_{part_id}",
@@ -103,24 +134,63 @@ def format_keys(part_id):
     }
 
 
-def read_states(part_id):
+def read_states(part_id: str) -> Dict[str, Any]:
+    """
+    Reads a set of states based on a given part ID.
+
+    Args:
+        part_id (str): The ID of the part to read the states for.
+
+    Returns:
+        dict: A dictionary of states.
+    """
     widget_keys = format_keys(part_id)
     return {key: st.session_state[value] for key, value in widget_keys.items()}
 
 
 @st.cache_data
-def name_part(instrument_name, custom_label):
+def name_part(instrument_name: str, custom_label: str) -> str:
+    """Returns a formatted string representing a part's name.
+
+    Args:
+        instrument_name (str): The name of the instrument associated with the part.
+        custom_label (str): A custom label for the part.
+
+    Returns:
+        str: A formatted string representing the name of the part.
+    """
     return f"{instrument_name} {custom_label} Part"
 
 
-def serialize_part(musical_notes, instrument_name, custom_label):
+def serialize_part(musical_notes: str, instrument_name: str, custom_label: str) -> Part:
+    """
+    Create a Music21 Part object based on the given parameters.
+
+    Args:
+        musical_notes (str): A string representation of the musical notes to be included in the part.
+        instrument_name (str): The name of the instrument to use for the part.
+        custom_label (str): A custom label to append to the instrument name to create the part name.
+
+    Returns:
+        Part: A Music21 Part object containing the specified musical notes and instrument information.
+    """
     part = parse(musical_notes, format="tinyNotation") if musical_notes else Part()
     part.insert(0, getattr(instrument, instrument_name)())
     part.partName = name_part(instrument_name, custom_label)
     return part
 
 
-def trim(im):
+def trim(im: Image) -> Image:
+    """
+    Trims an image by cropping it to the bounding box of the non-white pixels.
+    Adds a 5 pixel white border around the resulting image.
+
+    Args:
+        im (Image): The image to trim.
+
+    Returns:
+        Image: The trimmed image with a 5 pixel white border.
+    """
     im_gray = ImageOps.grayscale(im)
 
     # Invert the image to convert the white pixels to black and vice versa
@@ -135,7 +205,19 @@ def trim(im):
     return im_padded
 
 
-def show_image(musical_notes=None, stream=None):
+def show_image(musical_notes: Optional[str] = None, stream: Optional[Stream] = None) -> None:
+    """Displays an image of a music score created from a `music21` stream object or a string of musical notes.
+
+    Args:
+        musical_notes (str, optional): A string of musical notes in `tinyNotation` format. Defaults to None.
+        stream (music21.stream.Stream, optional): A `music21` stream object. Defaults to None.
+
+    Returns:
+        None: Displays the music score image using Streamlit's `st.image` function.
+
+    Raises:
+        ValueError: If `musical_notes` is an empty string.
+    """
     if musical_notes:
         if len(musical_notes) == 0:
             st.error("The part is empty! Please first enter some musical notes.")
@@ -150,7 +232,27 @@ def show_image(musical_notes=None, stream=None):
         return st.image(trim(part_image), use_column_width=True)
 
 
-def create_part_inputs(part_id=None, musical_notes=None, instrument_name=None):
+def create_part_inputs(
+    part_id: Optional[str] = None,
+    musical_notes: Optional[str] = None,
+    instrument_name: Optional[str] = None,
+) -> str:
+    """
+    Displays a UI for creating or editing a piano part.
+
+    Args:
+        part_id (str, optional): The unique ID of the part. If provided, the part
+            will be loaded from session state. Defaults to None.
+        musical_notes (str, optional): The musical notes to use for the part. If
+            provided, the text area will be pre-populated with this value.
+            Defaults to None.
+        instrument_name (str, optional): The name of the instrument to use for the
+            part. If provided, the select box will be set to this value. Defaults
+            to None.
+
+    Returns:
+        str: The ID of the created or edited part.
+    """
     if part_id:
         states = read_states(part_id)
         musical_notes = states["musical_notes"]
@@ -201,7 +303,7 @@ def create_part_inputs(part_id=None, musical_notes=None, instrument_name=None):
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            hear_stream_inputs(part, key=f"part_player_{part_id}")
+            play_stream_inputs(part, key=f"part_player_{part_id}")
         with col2:
             show = st.button(
                 "🎼 Show part.", key=f"part_show_{part_id}", use_container_width=True
@@ -222,6 +324,12 @@ def create_part_inputs(part_id=None, musical_notes=None, instrument_name=None):
 
 
 def create_song():
+    """
+    Creates a music Score object from the serialized parts in session state.
+
+    Returns:
+        A Score object containing all serialized parts.
+    """
     song = Score()
     for part_id in st.session_state.part_ids:
         states = read_states(part_id)
@@ -232,6 +340,11 @@ def create_song():
 
 
 def output_song():
+    """Outputs the current song in the selected format.
+
+    Returns:
+        None
+    """
     format = st.session_state.output_format
     if format == "":
         return
@@ -268,7 +381,23 @@ def output_song():
             st.code(contents, language="xml")
 
 
-def eval_composition(composition):
+def eval_composition(composition: str) -> None:
+    """Evaluate a music composition in a specific format and create input fields for each part.
+
+    Args:
+        composition: A string representing a music composition in the following format:
+            ```
+            <instrument_name>: <musical_notes>
+            ---
+            <instrument_name>: <musical_notes>
+            ...
+            ```
+            where `---` separates different parts, `<instrument_name>` is the name of the instrument for the corresponding
+            part, and `<musical_notes>` is a string of musical notes in the TinyNotation format.
+
+    Returns:
+        None.
+    """
     try:
         if "```" in composition:
             composition = composition.split("```")[1]
@@ -375,7 +504,7 @@ st.divider()
 col1, col2 = st.columns(2)
 song = create_song()
 with col1:
-    hear_stream_inputs(song, key="song_player")
+    play_stream_inputs(song, key="song_player")
 with col2:
     output = st.button("📁 Output song.", key="output_song", use_container_width=True)
 if output:
