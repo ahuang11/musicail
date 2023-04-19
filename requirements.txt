@@ -3,3 +3,4 @@ langchain
 music21
 Pillow
 openai
+pygame
