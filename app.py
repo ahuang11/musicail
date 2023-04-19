@@ -16,9 +16,6 @@ from music21.stream import Part, Score, Stream
 from PIL import Image, ImageChops, ImageOps
 
 
-os.environ["QT_QPA_PLATFORM"] = "offscreen"
-
-
 def is_subclass(obj: object) -> bool:
     """Checks if an object is a subclass of `instrument.Instrument`.
 
@@ -65,6 +62,7 @@ if sys.platform == "darwin":
     MSCORE_PATH = "/opt/homebrew/bin/mscore"
     environment.set("musescoreDirectPNGPath", MSCORE_PATH)
 else:
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
     MSCORE_PATH = "/usr/bin/mscore"
 
 INSTRUMENT_OPTIONS = [
