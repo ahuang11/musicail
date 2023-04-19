@@ -1,18 +1,18 @@
-from dataclasses import dataclass
 import os
 import random
-import streamlit as st
-from uuid import uuid4
-from textwrap import dedent
-from music21.converter import parse
-from music21.stream import Score, Part
-from music21.midi.realtime import StreamPlayer
-from music21 import instrument
-from PIL import Image, ImageOps, ImageChops
-from tempfile import NamedTemporaryFile
-from music21 import environment
 import subprocess
-from langchain import PromptTemplate, LLMChain, OpenAI
+from dataclasses import dataclass
+from tempfile import NamedTemporaryFile
+from textwrap import dedent
+from uuid import uuid4
+
+import streamlit as st
+from langchain import LLMChain, OpenAI, PromptTemplate
+from music21 import environment, instrument
+from music21.converter import parse
+from music21.midi.realtime import StreamPlayer
+from music21.stream import Part, Score
+from PIL import Image, ImageChops, ImageOps
 
 
 def is_subclass(obj):
