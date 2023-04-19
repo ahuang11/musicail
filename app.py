@@ -64,6 +64,8 @@ TEMPLATE = dedent(
 if sys.platform == "darwin":
     MSCORE_PATH = "/opt/homebrew/bin/mscore"
     environment.set("musescoreDirectPNGPath", MSCORE_PATH)
+else:
+    MSCORE_PATH = "mscore"
 
 INSTRUMENT_OPTIONS = [
     var_name
