@@ -14,9 +14,6 @@ from music21.converter import parse
 from music21.midi.realtime import StreamPlayer
 from music21.stream import Part, Score, Stream
 from PIL import Image, ImageChops, ImageOps
-import pygame
-
-pygame.init()
 
 
 def is_subclass(obj: object) -> bool:
@@ -94,17 +91,18 @@ INSTRUCTIONS = """
 """
 
 
-def play_stream(stream: Stream) -> None:
-    """Plays a stream using the StreamPlayer.
+def to_mp3(stream: Stream, key: str) -> None:
+    """Converts a stream to MP3.
 
     Args:
-        stream: The stream to play.
+        stream: The stream to convert.
     """
-    player = StreamPlayer(stream)
-    if player.pygame.mixer.music.get_busy():
-        player.stop()
-    else:
-        player.play(blocked=False)
+    temp_midi_path = stream.write("midi")
+    with NamedTemporaryFile(suffix=".mp3") as temp_mp3_file:
+        temp_mp3_path = temp_mp3_file.name
+        subprocess.run([MSCORE_PATH, "-o", temp_mp3_path, temp_midi_path])
+        st.text("💾 Click on ⋮ to download.")
+        st.audio(temp_mp3_path, format="audio/mpeg")
 
 
 def play_stream_inputs(stream: Stream, key: str):
@@ -115,11 +113,11 @@ def play_stream_inputs(stream: Stream, key: str):
         key: The key for the button.
     """
     label = "part" if "part" in key else "song"
-    if st.button(f"🔊 Play or pause {label}.", key=key, use_container_width=True):
+    if st.button(f"🔊 Listen to {label}.", key=key, use_container_width=True):
         if len(stream.flat.notes) == 0:
             st.error(f"The {label} is empty! Please first enter some musical notes.")
             return
-        play_stream(stream)
+        to_mp3(stream, key=key)
 
 
 @st.cache_data
@@ -306,16 +304,16 @@ def create_part_inputs(
 
         part = serialize_part(musical_notes, instrument_name, custom_label)
 
-        col1, col2, col3 = st.columns(3)
+        play_stream_inputs(part, key=f"part_player_{part_id}")
+
+        col1, col2 = st.columns(2)
         with col1:
-            play_stream_inputs(part, key=f"part_player_{part_id}")
-        with col2:
             show = st.button(
                 "🎼 Show part.", key=f"part_show_{part_id}", use_container_width=True
             )
         if show:
             show_image(musical_notes=musical_notes)
-        with col3:
+        with col2:
             delete = st.button(
                 label="🗑️ Delete part.",
                 key=f"delete_part_{part_id}",
@@ -506,12 +504,8 @@ if st.button("🎻 Add new part.", key="add_part", use_container_width=True):
 
 st.divider()
 
-col1, col2 = st.columns(2)
 song = create_song()
-with col1:
-    play_stream_inputs(song, key="song_player")
-with col2:
-    output = st.button("📁 Output song.", key="output_song", use_container_width=True)
+output = st.button("📁 Combine all parts and output song.", key="output_song", use_container_width=True)
 if output:
     format = st.selectbox(
         label="🗄️ Select the output format.",
