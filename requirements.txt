@@ -1,0 +1,5 @@
+streamlit
+langchain
+music21
+Pillow
+openai
