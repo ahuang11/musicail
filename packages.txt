@@ -1,2 +1,4 @@
 musescore
 libasound2-dev
+libsdl2-dev
+libsdl2-mixer-dev
