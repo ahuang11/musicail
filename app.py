@@ -101,8 +101,8 @@ def to_mp3(stream: Stream, key: str) -> None:
     with NamedTemporaryFile(suffix=".mp3") as temp_mp3_file:
         temp_mp3_path = temp_mp3_file.name
         print(MSCORE_PATH)
-        import which
-        print(which("mscore"))
+        import os
+        print(os.system("which mscore"))
         subprocess.run([MSCORE_PATH, "-o", temp_mp3_path, temp_midi_path])
         st.text("💾 Click on ⋮ to download.")
         st.audio(temp_mp3_path, format="audio/mpeg")
