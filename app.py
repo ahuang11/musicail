@@ -64,6 +64,7 @@ if sys.platform == "darwin":
 else:
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     MSCORE_PATH = "/usr/bin/mscore"
+    environment.set("musescoreDirectPNGPath", MSCORE_PATH)
 
 INSTRUMENT_OPTIONS = [
     var_name
