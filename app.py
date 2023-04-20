@@ -196,17 +196,18 @@ def trim(im: Image) -> Image:
     Returns:
         Image: The trimmed image with a 5 pixel white border.
     """
-    im_gray = ImageOps.grayscale(im)
+    im_gray = ImageOps.grayscale(im).convert("RGB")
 
-    # Invert the image to convert the white pixels to black and vice versa
-    im_inverted = ImageOps.invert(im_gray)
+    if sys.platform == "darwin":
+        # Invert the image to convert the white pixels to black and vice versa
+        im_inverted = ImageOps.invert(im_gray)
 
-    # Create a mask of the non-white pixels
-    im_mask = ImageChops.darker(im_inverted, ImageOps.invert(im_inverted))
+        # Create a mask of the non-white pixels
+        im_mask = ImageChops.darker(im_inverted, ImageOps.invert(im_inverted))
 
-    # Crop the image to the bounding box of the non-white pixels
-    im_cropped = im.crop(im_mask.getbbox())
-    im_padded = ImageOps.expand(im_cropped, border=5, fill="white")
+        # Crop the image to the bounding box of the non-white pixels
+        im_cropped = im.crop(im_mask.getbbox())
+        im_padded = ImageOps.expand(im_cropped, border=5, fill="white")
     return im_padded
 
 
@@ -229,12 +230,12 @@ def show_image(musical_notes: Optional[str] = None, stream: Optional[Stream] = N
             return
         stream = parse(musical_notes, format="tinyNotation")
     try:
-        image_path = stream.write("musicxml.png", "temp.png")
+        image_path = stream.write("musicxml.png")
     except Exception as e:
         st.error(f"Parsing error; cannot render the part: {e}.")
         return
     with Image.open(image_path) as part_image:
-        return st.image(part_image, use_column_width=True)
+        return st.image(trim(part_image), use_column_width=True)
 
 
 def create_part_inputs(
