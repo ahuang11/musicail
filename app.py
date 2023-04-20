@@ -33,27 +33,25 @@ def is_subclass(obj: object) -> bool:
 
 TEMPLATE = dedent(
     """
-    You are a helpful chat assistant.
-
     Imagine you are the brilliant {composer}.
 
-    Compose a {minutes} minutes long song, following this description: {description}.
+    Compose a {minutes} minute(s) song, following this description: {description}.
 
     The song should include these instruments: {instruments}.
 
-    Think about it step by step and ensure that each instrument part
-    complements one another.
+    Consider each step carefully, ensuring that each instrument
+    harmonize with each other.
 
     Respond with ONLY the song using tinynotation, wrapped in ```.
-    
-    Each instrument part should be prefixed with instrument name as provided
-    and on its own line separated by ---.
 
-    Here's an example output:
+    Each part should be on its own line with a moody title,
+    instrument name, and music notes, delineated by :.
+
+    For example:
     ```
-    Violin: 4/4 c4 d b-1
+    Le Viola : Viola : 4/4 D E F
     ---
-    TenorSaxophone: 4/4 A B C
+    PO : PipeOrgan : 4/4 c4 d r
     ```
     """
 ).strip()
@@ -78,18 +76,18 @@ INSTRUCTIONS = """
     With MusicAIl, you *don't need* to be an expert in music theory
     to compose beautiful songs.
 
-    Start by adding a part and entering some musical notes in [tinynotation](
+    Start by filling out the sidebar; you can use the OpenAI API or paste a
+    composition output from an online LLM like ChatGPT, Bing Chat, or Bard.
+
+    Or you can manually add parts and enter musical notes in [tinynotation](
     https://web.mit.edu/music21/doc/usersGuide/usersGuide_16_tinyNotation.html).
 
-    You can enter simple music notes such as `A B r C`, where `r` denotes a rest.
-    
-    Alternatively, you can mix complex symbols with notes like
+    Valid notes can be as simple as `A B r C`, where `r` denotes a rest.
+
+    You can also mix complex symbols with notes like
     `4/4 c4 trip{c8 d e} trip{f4 g a} b-1`.
 
     Add as many parts as you want--each part will be played simultaneously.
-    
-    **Or, simply have AI compose a song for you by expanding the AI options!**
-
 """
 
 
@@ -103,7 +101,6 @@ def to_mp3(stream: Stream, key: str) -> None:
     with NamedTemporaryFile(suffix=".mp3") as temp_mp3_file:
         temp_mp3_path = temp_mp3_file.name
         subprocess.run([MSCORE_PATH, "-o", temp_mp3_path, temp_midi_path])
-        st.text("💾 Click on ⋮ to download.")
         st.audio(temp_mp3_path, format="audio/mpeg")
 
 
@@ -115,7 +112,7 @@ def play_stream_inputs(stream: Stream, key: str):
         key: The key for the button.
     """
     label = "part" if "part" in key else "song"
-    if st.button(f"🔊 Listen to {label}.", key=key, use_container_width=True):
+    if st.button(f"🔊 Listen to this {label}.", key=key, use_container_width=True):
         if len(stream.flat.notes) == 0:
             st.error(f"The {label} is empty! Please first enter some musical notes.")
             return
@@ -248,6 +245,7 @@ def create_part_inputs(
     part_id: Optional[str] = None,
     musical_notes: Optional[str] = None,
     instrument_name: Optional[str] = None,
+    custom_label: Optional[str] = None,
 ) -> str:
     """
     Displays a UI for creating or editing a piano part.
@@ -261,6 +259,7 @@ def create_part_inputs(
         instrument_name (str, optional): The name of the instrument to use for the
             part. If provided, the select box will be set to this value. Defaults
             to None.
+        custom_label (str, optional): A custom label to append to the part title.
 
     Returns:
         str: The ID of the created or edited part.
@@ -272,9 +271,9 @@ def create_part_inputs(
         custom_label = states["custom_label"]
     else:
         part_id = uuid4().hex
-        musical_notes = musical_notes or ""
-        instrument_name = instrument_name or ""
-        custom_label = ""
+        musical_notes = musical_notes.strip() or ""
+        instrument_name = instrument_name.strip() or ""
+        custom_label = custom_label.strip() or ""
         st.session_state.part_ids.append(part_id)
 
     part_keys = format_keys(part_id)
@@ -313,21 +312,22 @@ def create_part_inputs(
 
         part = serialize_part(musical_notes, instrument_name, custom_label)
 
-        play_stream_inputs(part, key=f"part_player_{part_id}")
-
         col1, col2 = st.columns(2)
         with col1:
             show = st.button(
-                "🎼 Show part.", key=f"part_show_{part_id}", use_container_width=True
+                "🎼 Show this part.",
+                key=f"part_show_{part_id}",
+                use_container_width=True,
             )
         if show:
             show_image(musical_notes=musical_notes)
         with col2:
             delete = st.button(
-                label="🗑️ Delete part.",
+                label="🗑️ Delete this part.",
                 key=f"delete_part_{part_id}",
                 use_container_width=True,
             )
+        play_stream_inputs(part, key=f"part_player_{part_id}")
 
     if delete:
         st.session_state.part_ids.remove(part_id)
@@ -361,12 +361,13 @@ def output_song():
     if format == "":
         return
 
+    song = create_song()
     if format == "mp3":
         temp_midi_path = song.write("midi")
         with NamedTemporaryFile(suffix=".mp3") as temp_mp3_file:
             temp_mp3_path = temp_mp3_file.name
             subprocess.run([MSCORE_PATH, "-o", temp_mp3_path, temp_midi_path])
-            st.text("💾 Click on ⋮ to download.")
+            st.markdown("💾 Click on ⋮ to download.")
             st.audio(temp_mp3_path, format="audio/mpeg")
     elif format == "midi":
         temp_midi_path = song.write("midi")
@@ -378,7 +379,7 @@ def output_song():
                 use_container_width=True,
             )
     elif format == "png":
-        st.text("💾 Right click and 'Save image as...' to download.")
+        st.markdown("💾 Right click and 'Save image as...' to download.")
         show_image(stream=song)
     elif format == "xml":
         temp_xml_path = song.write("musicxml")
@@ -423,8 +424,12 @@ def eval_composition(composition: str) -> None:
 
     st.session_state.part_ids = []
     for part in parts:
-        instrument_name, musical_notes = part.strip().split(": ")
-        create_part_inputs(musical_notes=musical_notes, instrument_name=instrument_name)
+        custom_label, instrument_name, musical_notes = part.strip().split(":", maxsplit=3)
+        create_part_inputs(
+            musical_notes=musical_notes,
+            instrument_name=instrument_name,
+            custom_label=custom_label,
+        )
 
 
 st.title("🎶 MusicAIl")
@@ -446,77 +451,90 @@ with part_container:
     for part_id in st.session_state.part_ids[:]:
         create_part_inputs(part_id)
 
-with st.expander("🤖 Click to expand AI options."):
-    composer = st.text_input("🧑‍🎤 Enter an inspirational composer.", value="Composer")
-    description = st.text_area("📝 Describe a song to compose.")
-    instruments = st.multiselect(
-        label="🪗 Select the instruments that the AI should use.",
-        options=INSTRUMENT_OPTIONS,
-        default=["Piano"],
+st.sidebar.subheader("Compose a song with AI.")
+composer = st.sidebar.text_input(
+    "🧑‍🎤 Enter an inspirational composer.", value="Composer"
+)
+description = st.sidebar.text_area("📝 Describe a song to compose.")
+instruments = st.sidebar.multiselect(
+    label="🪗 Select the instruments that the AI should use.",
+    options=INSTRUMENT_OPTIONS,
+    default=["Piano"],
+)
+minutes = st.sidebar.slider(
+    label="Choose how long, in minutes, the song should be.",
+    min_value=0.0,
+    max_value=5.0,
+    value=1.0,
+    step=0.05,
+)
+
+prompt_template = PromptTemplate(
+    template=TEMPLATE,
+    input_variables=["composer", "description", "instruments", "minutes"],
+)
+prompt_inputs = dict(
+    composer=composer,
+    description=description,
+    instruments=", ".join(instruments),
+    minutes=minutes,
+)
+prompt = prompt_template.format(**prompt_inputs)
+
+llm = None
+tab1, tab2 = st.sidebar.tabs(["OpenAI API", "Online LLMs"])
+with tab1:
+    api_key = st.text_input("🔑 Paste in an OpenAI API key.", type="password")
+    model_name = st.selectbox(
+        label="Choose a model.",
+        options=["gpt-3.5-turbo", "davinci", "curie", "babbage", "ada"],
+        index=0,
     )
-    _, col, _ = st.columns([1, 80, 1])
-    with col:
-        minutes = st.slider(
-            label="Choose how long, in minutes, the song should be.",
-            min_value=0.0,
-            max_value=5.0,
-            value=1.0,
-            step=0.05,
-        )
-
-    prompt_template = PromptTemplate(
-        template=TEMPLATE,
-        input_variables=["composer", "description", "instruments", "minutes"],
+    temperature = st.slider(
+        label="Choose how creative the AI should be.",
+        min_value=0.0,
+        max_value=1.0,
+        value=1.0,
+        step=0.05,
     )
-    prompt_inputs = dict(
-        composer=composer,
-        description=description,
-        instruments=", ".join(instruments),
-        minutes=minutes,
+    max_tokens = st.slider(label="Set a threshold for the max tokens used.")
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+        llm = OpenAI(
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+with tab2:
+    pasted_output = st.text_area(
+        "📋 Paste in a composition from online LLMs and parse it. "
+        "Ensure the output format follows the example output below!"
     )
-    prompt = prompt_template.format(**prompt_inputs)
-    st.text(f"💬 The AI will use this as the prompt:\n\n{prompt}")
 
-    llm = None
-    tab1, tab2 = st.tabs(["OpenAI API", "Online LLMs"])
-    with tab1:
-        api_key = st.text_input("🔑 Paste in an OpenAI API key.", type="password")
-        temperature = st.slider(
-            label="Choose how creative the AI should be.",
-            min_value=0.0,
-            max_value=1.0,
-            value=1.0,
-            step=0.05,
-        )
-        if api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
-            llm = OpenAI(temperature=temperature)
-    with tab2:
-        pasted_output = st.text_area(
-            "📋 Paste in a composition from online LLMs, like "
-            "from ChatGPT, Bing Chat, Bard, etc. Ensure the "
-            "output format follows the example prompt!"
-        )
+st.sidebar.markdown(f"💬 Here's a prompt template:\n\n{prompt}")
 
-    if st.button("🏃‍♀️ Run", use_container_width=True):
-        if pasted_output:
-            eval_composition(pasted_output)
-        elif llm:
-            llm_chain = LLMChain(prompt=prompt_template, llm=llm)
-            api_output = llm_chain.run(**prompt_inputs)
-            with part_container:
-                eval_composition(api_output)
-
-if st.button("🎻 Add new part.", key="add_part", use_container_width=True):
-    with part_container:
-        part_id = create_part_inputs()
+if st.sidebar.button("🏃‍♀️ Run and add parts.", use_container_width=True):
+    if pasted_output:
+        eval_composition(pasted_output)
+    elif llm:
+        llm_chain = LLMChain(prompt=prompt_template, llm=llm)
+        api_output = llm_chain.run(**prompt_inputs)
+        with part_container:
+            eval_composition(api_output)
 
 st.divider()
 
-song = create_song()
-output = st.button(
-    "📁 Combine all parts and output song.", key="output_song", use_container_width=True
-)
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("🎻 Add a new part.", key="add_part", use_container_width=True):
+        with part_container:
+            part_id = create_part_inputs()
+with col2:
+    output = st.button(
+        "📦 Package all parts and output.",
+        key="output_song",
+        use_container_width=True,
+    )
 if output:
     format = st.selectbox(
         label="🗄️ Select the output format.",
