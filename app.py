@@ -206,7 +206,7 @@ def trim(im: Image) -> Image:
 
     # Crop the image to the bounding box of the non-white pixels
     im_cropped = im.crop(im_mask.getbbox())
-    im_padded = ImageOps.expand(im_cropped, border=5, fill="white").convert('RGB')
+    im_padded = ImageOps.expand(im_cropped, border=5, fill="white")
     return im_padded
 
 
@@ -229,12 +229,12 @@ def show_image(musical_notes: Optional[str] = None, stream: Optional[Stream] = N
             return
         stream = parse(musical_notes, format="tinyNotation")
     try:
-        image_path = stream.write("musicxml.png")
+        image_path = stream.write("musicxml.png", "temp.png")
     except Exception as e:
         st.error(f"Parsing error; cannot render the part: {e}.")
         return
     with Image.open(image_path) as part_image:
-        return st.image(trim(part_image), use_column_width=True, output_format="JPEG")
+        return st.image(part_image, use_column_width=True)
 
 
 def create_part_inputs(
