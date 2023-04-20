@@ -41,22 +41,23 @@ TEMPLATE = dedent(
     """
     Here's a challenge for you, my helpful chat assistant.
 
-    Imagine you are a world-class, inspirational composer, {composer}.
+    Imagine you are a world-class, renowned composer, {composer}.
 
     Compose a new, memorable song, with a duration of {minutes} minutes,
     based on this description: "{description}".
 
-    The song should use these instruments: "{instruments}".
+    Each part should use one of these instruments: "{instruments}",
+    and will be played simultaneously.
 
     Think carefully, step by step, critiquing and revising the composition
     as you go, basing it off musical theory, ensuring each part
-    complements one another.
+    complements one another. Articulate your thoughts.
 
-    When you are ready with a final composition, provide me the
-    entire song using tinynotation wrapped in "```",
-    with each instrument part on its own line, separated by "---".
+    When you are ready, provide me with the final composition
+    using tinynotation wrapped in "```";
+    each instrument part on its own line, separated by "---".
 
-    Each part must be formatted with a unique title first,
+    Format each part with a unique title first,
     instrument name second (do not modify instrument name),
     and music notes third, separated by ":".
 
