@@ -201,8 +201,11 @@ def trim(im: Image) -> Image:
     # Invert the image to convert the white pixels to black and vice versa
     im_inverted = ImageOps.invert(im_gray)
 
-    # Create a mask of the non-white pixels
-    im_mask = ImageChops.darker(im_inverted, ImageOps.invert(im_inverted))
+    # Create a mask of the non-white pixels, including transparent pixels
+    if im.mode == 'RGBA':
+        im_mask = ImageOps.grayscale(im.split()[-1])
+    else:
+        im_mask = im_inverted
 
     # Crop the image to the bounding box of the non-white pixels
     im_cropped = im.crop(im_mask.getbbox())
