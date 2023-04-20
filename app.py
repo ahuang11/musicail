@@ -37,40 +37,53 @@ def is_subclass(obj: object) -> bool:
     except TypeError:
         return False
 
-
 TEMPLATE = dedent(
     """
-    Imagine you are the brilliant {composer}.
+    Here's a challenge for you, my helpful chat assistant.
 
-    Compose a song, at least {minutes} minute(s) long,
+    Imagine you are a world-class, inspirational composer, {composer}.
+
+    Compose a new, memorable song, with a duration of {minutes} minutes,
     based on this description: "{description}".
 
     The song should use these instruments: "{instruments}".
-    You may use the same instrument more than once.
 
-    Consider each part carefully, ensuring each part complements
-    one another.
-    
-    Each part should be formatted with a moody title first,
-    instrument name second, and music notes third, separated by ":".
+    Think carefully, step by step, critiquing and revising the composition
+    as you go, basing it off musical theory, ensuring each part
+    complements one another.
 
-    Your response should be formatted like:
+    When you are ready with a final composition, provide me the
+    entire song using tinynotation wrapped in "```",
+    with each instrument part on its own line, separated by "---".
+
+    Each part must be formatted with a unique title first,
+    instrument name second (do not modify instrument name),
+    and music notes third, separated by ":".
+
+    Be sure to add flair by using "r" for rest,
+    "trip" for triplet, and "quad" for quadruplet.
+
+    Your composition should be formatted like:
     ```
     Dawn of Vi : Viola : 4/4 c4 trip{{c8 d e}} trip{{f4 g a}} b-1
     ---
     Ya : PipeOrgan : 4/4 E4 r f# g=lastG trip{{b-8 a g}} c
     ```
-
-    Respond with ONLY the song using tinynotation, wrapped in "```" with
-    each instrument part on its own line, separated by ---.
     """
 ).strip()
+
+DEFAULT_DESCRIPTION = (
+    "Grandiose, suspenseful, captivating, dynamic, non-repetitive, "
+    "multi-instrumental with emotional solos, anticipation, "
+    "with a grand finale"
+)
 
 INSTRUMENT_OPTIONS = [
     var_name
     for var_name in dir(instrument)
     if is_subclass(getattr(instrument, var_name))
     and var_name not in {"Instrument", "Conductor"}
+    and "Instrument" not in var_name
 ]
 
 
@@ -360,7 +373,7 @@ def create_song():
     return song
 
 
-def output_song():
+def output_song(song: Score):
     """Outputs the current song in the selected format.
 
     Returns:
@@ -370,15 +383,7 @@ def output_song():
     if format == "":
         return
 
-    song = create_song()
-    if format == "mp3":
-        temp_midi_path = song.write("midi")
-        with NamedTemporaryFile(suffix=".mp3") as temp_mp3_file:
-            temp_mp3_path = temp_mp3_file.name
-            subprocess.run([MSCORE_PATH, "-o", temp_mp3_path, temp_midi_path])
-            st.audio(temp_mp3_path, format="audio/mpeg")
-            st.markdown("💾 Click on ⋮ to download.")
-    elif format == "midi":
+    if format == "midi":
         temp_midi_path = song.write("midi")
         with open(temp_midi_path, "rb") as f:
             st.download_button(
@@ -422,8 +427,9 @@ def serialize_composition(composition: str) -> Set[str]:
     """
     clear_parts()
     try:
+        composition = composition.strip()
         if "```" in composition:
-            composition = composition.strip().strip("`")
+            composition = composition.split("```")[1]
         # sometimes, models don't listen :(
         sep = "---"
         if sep not in composition:
@@ -440,10 +446,14 @@ def serialize_composition(composition: str) -> Set[str]:
 
     part_ids = set()
     for part in parts:
-        if not part:
+        if not part.strip():
             continue
-        components = part.strip().split(":", maxsplit=3)
-        custom_label, instrument_name, musical_notes = components[:3]
+        try:
+            components = part.strip().split(":", maxsplit=3)
+            custom_label, instrument_name, musical_notes = components[:3]
+        except ValueError:
+            st.sidebar.warning(f"{part} cannot be parsed; skipping...")
+            continue
         part_id = create_part_inputs(
             musical_notes=musical_notes,
             instrument_name=instrument_name,
@@ -483,22 +493,22 @@ part_container = placeholder.container()
 
 st.sidebar.subheader("🤖 Compose a song with AI.")
 composer = st.sidebar.text_input(
-    "🧑‍🎤 Enter an inspirational composer.", value="Mozart"
+    "🧑‍🎤 Enter an inspirational composer.", value=""
 )
 description = st.sidebar.text_area(
     "📝 Describe a song to compose.",
-    value="happy, simple, yet dynamic, touching",
+    value=DEFAULT_DESCRIPTION,
 )
 instruments = st.sidebar.multiselect(
     label="🪗 Select the instruments that the AI should use.",
     options=INSTRUMENT_OPTIONS,
-    default=["Piano", "Guitar", "Violin"],
+    default=["Piano", "Guitar", "BassDrum"],
 )
 minutes = st.sidebar.slider(
     label="Choose how long, in minutes, the song should be.",
     min_value=0.0,
     max_value=5.0,
-    value=0.5,
+    value=1.0,
     step=0.05,
 )
 
@@ -516,6 +526,10 @@ prompt = prompt_template.format(**prompt_inputs)
 
 tab1, tab2 = st.sidebar.tabs(["Online LLMs", "OpenAI API"])
 with tab2:
+    st.warning(
+        "⚠️ This feature may not work well due to extraneous output from the model. "
+        "It's recommended to chat with an Online LLM and paste the final composition."
+    )
     api_key = st.text_input("🔑 Paste in an OpenAI API key.", type="password")
     model_name = st.selectbox(
         label="Choose a model.",
@@ -562,7 +576,7 @@ if st.sidebar.button("🏃‍♀️ Clear all parts and run.", use_container_wid
             serialized_part_ids = serialize_composition(api_output)
 
 st.sidebar.markdown(f"💬 Here's a prompt template to copy:")
-st.sidebar.text(prompt)
+st.sidebar.code(prompt, language="text")
 
 # create main
 with part_container:
@@ -590,14 +604,18 @@ with col3:
         key="clear_parts",
         use_container_width=True,
     )
+
+song = create_song()
+play_stream_inputs(song, key="play_score")
 if output:
     format = st.selectbox(
         label="🗄️ Select the output format.",
-        options=["", "mp3", "midi", "png", "xml", "tinynotation"],
+        options=["", "midi", "png", "xml", "tinynotation"],
         key="output_format",
     )
 with st.spinner():
-    output_song()
+    output_song(song=song)
+
 
 if clear:
     clear_parts()
