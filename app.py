@@ -1,10 +1,10 @@
 import os
-import sys
 import random
 import subprocess
-from typing import Any, Dict, List, Optional, Tuple
+import sys
 from tempfile import NamedTemporaryFile
 from textwrap import dedent
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 import streamlit as st
@@ -207,15 +207,17 @@ def trim(im: Image) -> Image:
 
         # Crop the image to the bounding box of the non-white pixels
         im_cropped = im.crop(im_mask.getbbox())
-        im_padded = ImageOps.expand(im_cropped, border=5, fill="white")
-        return im_padded
     else:
         im = im.convert("RGBA")
-        white_bg = Image.new('RGBA', im.size, (255, 255, 255, 255))
-        white_bg.paste(im, mask=im)
-        return white_bg
+        im_cropped = Image.new("RGBA", im.size, (255, 255, 255, 255))
+        im_cropped.paste(im, mask=im)
+    im_padded = ImageOps.expand(im_cropped, border=5, fill="white")
+    return im_padded
 
-def show_image(musical_notes: Optional[str] = None, stream: Optional[Stream] = None) -> None:
+
+def show_image(
+    musical_notes: Optional[str] = None, stream: Optional[Stream] = None
+) -> None:
     """Displays an image of a music score created from a `music21` stream object or a string of musical notes.
 
     Args:
@@ -512,7 +514,9 @@ if st.button("🎻 Add new part.", key="add_part", use_container_width=True):
 st.divider()
 
 song = create_song()
-output = st.button("📁 Combine all parts and output song.", key="output_song", use_container_width=True)
+output = st.button(
+    "📁 Combine all parts and output song.", key="output_song", use_container_width=True
+)
 if output:
     format = st.selectbox(
         label="🗄️ Select the output format.",
