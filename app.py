@@ -208,7 +208,9 @@ def trim(im: Image) -> Image:
         # Crop the image to the bounding box of the non-white pixels
         im_cropped = im.crop(im_mask.getbbox())
         im_padded = ImageOps.expand(im_cropped, border=5, fill="white")
-    return im_padded
+        return im_padded
+    else:
+        return im_gray
 
 
 def show_image(musical_notes: Optional[str] = None, stream: Optional[Stream] = None) -> None:
