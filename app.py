@@ -210,8 +210,10 @@ def trim(im: Image) -> Image:
         im_padded = ImageOps.expand(im_cropped, border=5, fill="white")
         return im_padded
     else:
-        return im.convert("RGB")
-
+        im = im.convert("RGBA")
+        white_bg = Image.new('RGBA', im.size, (255, 255, 255, 255))
+        white_bg.paste(im, mask=im)
+        return white_bg
 
 def show_image(musical_notes: Optional[str] = None, stream: Optional[Stream] = None) -> None:
     """Displays an image of a music score created from a `music21` stream object or a string of musical notes.
