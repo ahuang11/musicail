@@ -92,6 +92,9 @@ INSTRUCTIONS = """
     With MusicAIl, you *don't need* to be an expert in music theory
     to compose beautiful songs.
 
+    A video demo can be found [here](
+    https://twitter.com/i/status/1649163391406317569).
+
     Start by filling out the sidebar; you can use the OpenAI API or paste a
     composition output from an online LLM like ChatGPT, Bing Chat, or Bard,
     using the prompt template as inspiration. When you're ready, press run.
