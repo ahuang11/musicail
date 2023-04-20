@@ -37,7 +37,7 @@ TEMPLATE = dedent(
 
     Compose a {minutes} minute(s) song, following this description: {description}.
 
-    The song should include these instruments: {instruments}.
+    The song should select from these instruments: {instruments}.
 
     Consider each step carefully, ensuring that each instrument
     harmonize with each other.
@@ -78,7 +78,7 @@ INSTRUCTIONS = """
 
     Start by filling out the sidebar; you can use the OpenAI API or paste a
     composition output from an online LLM like ChatGPT, Bing Chat, or Bard,
-    using the prompt template as inspiration.
+    using the prompt template as inspiration. When you're ready, press run.
 
     Or you can manually add parts and enter musical notes in [tinynotation](
     https://web.mit.edu/music21/doc/usersGuide/usersGuide_16_tinyNotation.html).
@@ -161,7 +161,7 @@ def name_part(instrument_name: str, custom_label: str) -> str:
     Returns:
         str: A formatted string representing the name of the part.
     """
-    return f"{instrument_name} {custom_label} Part"
+    return custom_label or instrument_name
 
 
 def serialize_part(musical_notes: str, instrument_name: str, custom_label: str) -> Part:
@@ -281,53 +281,54 @@ def create_part_inputs(
     deletable_wrapper = st.empty()
 
     with deletable_wrapper.container():
-        header = st.subheader(f"Piano Part")
-        st.text_area(
-            label="🎹 Enter some musical notes.",
-            value=musical_notes,
-            key=part_keys["musical_notes"],
-        )
-
-        if instrument_name:
-            index = INSTRUMENT_OPTIONS.index(instrument_name)
-        else:
-            index = random.randint(0, len(INSTRUMENT_OPTIONS)) - 1
-            instrument_name = INSTRUMENT_OPTIONS[index]
-
-        st.selectbox(
-            label="🥁 Choose an instrument to use.",
-            options=INSTRUMENT_OPTIONS,
-            index=index,
-            key=part_keys["instrument_name"],
-        )
-
-        st.text_input(
-            label="✏️ Label this part if desired.",
-            value=custom_label,
-            key=part_keys["custom_label"],
-        )
-
-        part_name = name_part(custom_label, instrument_name)
-        header.subheader(part_name)
-
-        part = serialize_part(musical_notes, instrument_name, custom_label)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            show = st.button(
-                "🎼 Show this part.",
-                key=f"part_show_{part_id}",
-                use_container_width=True,
+        header = st.subheader(f"Part")
+        with st.expander("Click to expand this part.", expanded=True):
+            st.text_area(
+                label="🎹 Enter some musical notes.",
+                value=musical_notes,
+                key=part_keys["musical_notes"],
             )
-        if show:
-            show_image(musical_notes=musical_notes)
-        with col2:
-            delete = st.button(
-                label="🗑️ Delete this part.",
-                key=f"delete_part_{part_id}",
-                use_container_width=True,
+
+            if instrument_name:
+                index = INSTRUMENT_OPTIONS.index(instrument_name)
+            else:
+                index = random.randint(0, len(INSTRUMENT_OPTIONS)) - 1
+                instrument_name = INSTRUMENT_OPTIONS[index]
+
+            st.selectbox(
+                label="🥁 Choose an instrument to use.",
+                options=INSTRUMENT_OPTIONS,
+                index=index,
+                key=part_keys["instrument_name"],
             )
-        play_stream_inputs(part, key=f"part_player_{part_id}")
+
+            st.text_input(
+                label="✏️ Label this part if desired.",
+                value=custom_label,
+                key=part_keys["custom_label"],
+            )
+
+            part_name = name_part(instrument_name, custom_label)
+            header.subheader(part_name)
+
+            part = serialize_part(musical_notes, instrument_name, custom_label)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                show = st.button(
+                    "🎼 Show this part.",
+                    key=f"part_show_{part_id}",
+                    use_container_width=True,
+                )
+            if show:
+                show_image(musical_notes=musical_notes)
+            with col2:
+                delete = st.button(
+                    label="🗑️ Delete this part.",
+                    key=f"delete_part_{part_id}",
+                    use_container_width=True,
+                )
+            play_stream_inputs(part, key=f"part_player_{part_id}")
 
     if delete:
         st.session_state.part_ids.remove(part_id)
@@ -424,7 +425,9 @@ def eval_composition(composition: str) -> None:
 
     st.session_state.part_ids = []
     for part in parts:
-        custom_label, instrument_name, musical_notes = part.strip().split(":", maxsplit=3)
+        custom_label, instrument_name, musical_notes = part.strip().split(
+            ":", maxsplit=3
+        )
         create_part_inputs(
             musical_notes=musical_notes,
             instrument_name=instrument_name,
@@ -451,15 +454,18 @@ with part_container:
     for part_id in st.session_state.part_ids[:]:
         create_part_inputs(part_id)
 
-st.sidebar.subheader("Compose a song with AI.")
+st.sidebar.subheader("🤖 Compose a song with AI.")
 composer = st.sidebar.text_input(
-    "🧑‍🎤 Enter an inspirational composer.", value="Composer"
+    "🧑‍🎤 Enter an inspirational composer.", value="Mozart"
 )
-description = st.sidebar.text_area("📝 Describe a song to compose.")
+description = st.sidebar.text_area(
+    "📝 Describe a song to compose.",
+    value="Beautiful, peaceful, calming"
+)
 instruments = st.sidebar.multiselect(
     label="🪗 Select the instruments that the AI should use.",
     options=INSTRUMENT_OPTIONS,
-    default=["Piano"],
+    default=["Piano", "Violin", "Choir", "Flute"],
 )
 minutes = st.sidebar.slider(
     label="Choose how long, in minutes, the song should be.",
@@ -497,7 +503,13 @@ with tab1:
         value=1.0,
         step=0.05,
     )
-    max_tokens = st.slider(label="Set a threshold for the max tokens used.")
+    max_tokens = st.slider(
+        label="Set a threshold for the max tokens used.",
+        min_value=1,
+        max_value=2000,
+        value=256,
+        step=1,
+    )
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
         llm = OpenAI(
@@ -507,11 +519,9 @@ with tab1:
         )
 with tab2:
     pasted_output = st.text_area(
-        "📋 Paste in a composition from online LLMs and parse it. "
+        "📋 Paste in a composition from online LLMs to parse it. "
         "Ensure the output format follows the example output below!"
     )
-
-st.sidebar.markdown(f"💬 Here's a prompt template:\n\n{prompt}")
 
 if st.sidebar.button("🏃‍♀️ Run and add parts.", use_container_width=True):
     if pasted_output:
@@ -522,6 +532,8 @@ if st.sidebar.button("🏃‍♀️ Run and add parts.", use_container_width=Tru
         with part_container:
             eval_composition(api_output)
 
+st.sidebar.markdown(f"💬 Here's a prompt template:")
+st.sidebar.text(prompt)
 st.divider()
 
 col1, col2 = st.columns(2)
