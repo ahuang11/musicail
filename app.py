@@ -35,23 +35,25 @@ TEMPLATE = dedent(
     """
     Imagine you are the brilliant {composer}.
 
-    Compose a {minutes} minute(s) song, following this description: {description}.
+    Compose a song, at least {minutes} minute(s) long,
+    based on this description: {description}.
 
-    The song should select from these instruments: {instruments}.
+    The song should select from these instruments: {instruments} and
+    use each instrument more than once.
 
     Consider each step carefully, ensuring that each instrument
     harmonize with each other.
 
     Respond with ONLY the song using tinynotation, wrapped in ```.
 
-    Each part should be on its own line with a moody title,
-    instrument name, and music notes, delineated by :.
+    Each part should be on its own line with a moody title first,
+    instrument name second, and lastly music notes, each delineated by :.
 
-    For example:
+    For example you should respond like the following:
     ```
-    Le Viola : Viola : 4/4 D E F
+    Dawn of Vi : Viola : 4/4 D E F
     ---
-    PO : PipeOrgan : 4/4 c4 d r
+    Ya : PipeOrgan : 4/4 c4 d
     ```
     """
 ).strip()
@@ -414,7 +416,7 @@ def eval_composition(composition: str) -> None:
     """
     try:
         if "```" in composition:
-            composition = composition.split("```")[1]
+            composition = composition.strip().strip("`")
         parts = composition.strip().split("---")
     except ValueError:
         st.error(
@@ -465,7 +467,7 @@ description = st.sidebar.text_area(
 instruments = st.sidebar.multiselect(
     label="🪗 Select the instruments that the AI should use.",
     options=INSTRUMENT_OPTIONS,
-    default=["Piano", "Violin", "Choir", "Flute"],
+    default=["Piano", "Violin", "Flute"],
 )
 minutes = st.sidebar.slider(
     label="Choose how long, in minutes, the song should be.",
@@ -488,13 +490,13 @@ prompt_inputs = dict(
 prompt = prompt_template.format(**prompt_inputs)
 
 llm = None
-tab1, tab2 = st.sidebar.tabs(["OpenAI API", "Online LLMs"])
-with tab1:
+tab1, tab2 = st.sidebar.tabs(["Online LLMs", "OpenAI API"])
+with tab2:
     api_key = st.text_input("🔑 Paste in an OpenAI API key.", type="password")
     model_name = st.selectbox(
         label="Choose a model.",
         options=["gpt-3.5-turbo", "davinci", "curie", "babbage", "ada"],
-        index=0,
+        index=1,
     )
     temperature = st.slider(
         label="Choose how creative the AI should be.",
@@ -517,7 +519,7 @@ with tab1:
             temperature=temperature,
             max_tokens=max_tokens,
         )
-with tab2:
+with tab1:
     pasted_output = st.text_area(
         "📋 Paste in a composition from online LLMs to parse it. "
         "Ensure the output format follows the example output below!"
@@ -530,21 +532,33 @@ if st.sidebar.button("🏃‍♀️ Run and add parts.", use_container_width=Tru
         llm_chain = LLMChain(prompt=prompt_template, llm=llm)
         api_output = llm_chain.run(**prompt_inputs)
         with part_container:
-            eval_composition(api_output)
+            try:
+                eval_composition(api_output)
+            except Exception as e:
+                print(api_output)
+                st.error(
+                    f"Parsing the output failed due to {e}: {api_output}"
+                )
 
-st.sidebar.markdown(f"💬 Here's a prompt template:")
+st.sidebar.markdown(f"💬 Here's a prompt template to copy:")
 st.sidebar.text(prompt)
 st.divider()
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("🎻 Add a new part.", key="add_part", use_container_width=True):
         with part_container:
             part_id = create_part_inputs()
 with col2:
     output = st.button(
-        "📦 Package all parts and output.",
+        "📦 Package all parts.",
         key="output_song",
+        use_container_width=True,
+    )
+with col3:
+    clear = st.button(
+        "🗑️ Clear all parts.",
+        key="clear_parts",
         use_container_width=True,
     )
 if output:
@@ -553,4 +567,6 @@ if output:
         options=["", "mp3", "midi", "png", "xml"],
         key="output_format",
     )
+if clear:
+    st.session_state.part_ids = []
 output_song()
