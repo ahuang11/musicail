@@ -196,9 +196,9 @@ def trim(im: Image) -> Image:
     Returns:
         Image: The trimmed image with a 5 pixel white border.
     """
-    im_gray = ImageOps.grayscale(im).convert("RGB")
 
     if sys.platform == "darwin":
+        im_gray = ImageOps.grayscale(im).convert("RGB")
         # Invert the image to convert the white pixels to black and vice versa
         im_inverted = ImageOps.invert(im_gray)
 
@@ -210,7 +210,7 @@ def trim(im: Image) -> Image:
         im_padded = ImageOps.expand(im_cropped, border=5, fill="white")
         return im_padded
     else:
-        return im_gray
+        return im.convert("RGB")
 
 
 def show_image(musical_notes: Optional[str] = None, stream: Optional[Stream] = None) -> None:
