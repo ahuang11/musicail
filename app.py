@@ -4,16 +4,23 @@ import subprocess
 import sys
 from tempfile import NamedTemporaryFile
 from textwrap import dedent
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Set
 from uuid import uuid4
 
 import streamlit as st
+from langchain.chat_models import ChatOpenAI
 from langchain import LLMChain, OpenAI, PromptTemplate
 from music21 import environment, instrument
 from music21.converter import parse
-from music21.midi.realtime import StreamPlayer
 from music21.stream import Part, Score, Stream
 from PIL import Image, ImageChops, ImageOps
+
+if sys.platform == "darwin":
+    MSCORE_PATH = "/opt/homebrew/bin/mscore"
+else:
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    MSCORE_PATH = "/usr/bin/mscore"
+environment.set("musescoreDirectPNGPath", MSCORE_PATH)
 
 
 def is_subclass(obj: object) -> bool:
@@ -36,35 +43,28 @@ TEMPLATE = dedent(
     Imagine you are the brilliant {composer}.
 
     Compose a song, at least {minutes} minute(s) long,
-    based on this description: {description}.
+    based on this description: "{description}".
 
-    The song should select from these instruments: {instruments} and
-    use each instrument more than once.
+    The song should use these instruments: "{instruments}".
+    You may use the same instrument more than once.
 
-    Consider each step carefully, ensuring that each instrument
-    harmonize with each other.
+    Consider each part carefully, ensuring each part complements
+    one another.
+    
+    Each part should be formatted with a moody title first,
+    instrument name second, and music notes third, separated by ":".
 
-    Respond with ONLY the song using tinynotation, wrapped in ```.
-
-    Each part should be on its own line with a moody title first,
-    instrument name second, and lastly music notes, each delineated by :.
-
-    For example you should respond like the following:
+    Your response should be formatted like:
     ```
-    Dawn of Vi : Viola : 4/4 D E F
+    Dawn of Vi : Viola : 4/4 c4 trip{{c8 d e}} trip{{f4 g a}} b-1
     ---
-    Ya : PipeOrgan : 4/4 c4 d
+    Ya : PipeOrgan : 4/4 E4 r f# g=lastG trip{{b-8 a g}} c
     ```
+
+    Respond with ONLY the song using tinynotation, wrapped in "```" with
+    each instrument part on its own line, separated by ---.
     """
 ).strip()
-
-if sys.platform == "darwin":
-    MSCORE_PATH = "/opt/homebrew/bin/mscore"
-    environment.set("musescoreDirectPNGPath", MSCORE_PATH)
-else:
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
-    MSCORE_PATH = "/usr/bin/mscore"
-    environment.set("musescoreDirectPNGPath", MSCORE_PATH)
 
 INSTRUMENT_OPTIONS = [
     var_name
@@ -118,7 +118,8 @@ def play_stream_inputs(stream: Stream, key: str):
         if len(stream.flat.notes) == 0:
             st.error(f"The {label} is empty! Please first enter some musical notes.")
             return
-        to_mp3(stream, key=key)
+        with st.spinner():
+            to_mp3(stream, key=key)
 
 
 @st.cache_data
@@ -230,10 +231,14 @@ def show_image(
         ValueError: If `musical_notes` is an empty string.
     """
     if musical_notes:
-        if len(musical_notes) == 0:
-            st.error("The part is empty! Please first enter some musical notes.")
-            return
         stream = parse(musical_notes, format="tinyNotation")
+    elif stream:
+        musical_notes = stream.flat.notes
+
+    if len(musical_notes) == 0:
+        st.error("The part is empty! Please first enter some musical notes.")
+        return
+
     try:
         image_path = stream.write("musicxml.png")
     except Exception as e:
@@ -291,7 +296,7 @@ def create_part_inputs(
                 key=part_keys["musical_notes"],
             )
 
-            if instrument_name:
+            if instrument_name and instrument_name in INSTRUMENT_OPTIONS:
                 index = INSTRUMENT_OPTIONS.index(instrument_name)
             else:
                 index = random.randint(0, len(INSTRUMENT_OPTIONS)) - 1
@@ -323,7 +328,8 @@ def create_part_inputs(
                     use_container_width=True,
                 )
             if show:
-                show_image(musical_notes=musical_notes)
+                with st.spinner():
+                    show_image(musical_notes=musical_notes)
             with col2:
                 delete = st.button(
                     label="🗑️ Delete this part.",
@@ -370,8 +376,8 @@ def output_song():
         with NamedTemporaryFile(suffix=".mp3") as temp_mp3_file:
             temp_mp3_path = temp_mp3_file.name
             subprocess.run([MSCORE_PATH, "-o", temp_mp3_path, temp_midi_path])
-            st.markdown("💾 Click on ⋮ to download.")
             st.audio(temp_mp3_path, format="audio/mpeg")
+            st.markdown("💾 Click on ⋮ to download.")
     elif format == "midi":
         temp_midi_path = song.write("midi")
         with open(temp_midi_path, "rb") as f:
@@ -397,8 +403,8 @@ def output_song():
             st.code(contents, language="xml")
 
 
-def eval_composition(composition: str) -> None:
-    """Evaluate a music composition in a specific format and create input fields for each part.
+def serialize_composition(composition: str) -> Set[str]:
+    """serializeuate a music composition in a specific format and create input fields for each part.
 
     Args:
         composition: A string representing a music composition in the following format:
@@ -414,32 +420,45 @@ def eval_composition(composition: str) -> None:
     Returns:
         None.
     """
+    clear_parts()
     try:
         if "```" in composition:
             composition = composition.strip().strip("`")
-        parts = composition.strip().split("---")
+        # sometimes, models don't listen :(
+        sep = "---"
+        if sep not in composition:
+            sep = "\n\n"
+        if sep not in composition:
+            sep = "\n"
+        parts = composition.strip().split(sep)
     except ValueError:
-        st.error(
-            "The composition is not formatted correctly; "
+        st.sidebar.error(
+            f"The composition is not formatted correctly {composition}; "
             "please ensure it follows the example output."
         )
         return
 
-    st.session_state.part_ids = []
+    part_ids = set()
     for part in parts:
-        custom_label, instrument_name, musical_notes = part.strip().split(
-            ":", maxsplit=3
-        )
-        create_part_inputs(
+        if not part:
+            continue
+        components = part.strip().split(":", maxsplit=3)
+        custom_label, instrument_name, musical_notes = components[:3]
+        part_id = create_part_inputs(
             musical_notes=musical_notes,
             instrument_name=instrument_name,
             custom_label=custom_label,
         )
+        part_ids.add(part_id)
+    return part_ids
 
 
-st.title("🎶 MusicAIl")
-st.subheader("Music composition accessible to all with AI.")
-st.markdown(INSTRUCTIONS)
+def clear_parts():
+    st.session_state.part_ids = []
+    placeholder.empty()
+
+
+# initialize session state
 
 if "memory_stack" not in st.session_state:
     st.session_state.memory_stack = []
@@ -450,11 +469,17 @@ if "part_ids" not in st.session_state:
 if "output_format" not in st.session_state:
     st.session_state.output_format = ""
 
-part_container = st.container()
+# start laying out widgets
 
-with part_container:
-    for part_id in st.session_state.part_ids[:]:
-        create_part_inputs(part_id)
+st.title("🎶 MusicAIl")
+st.subheader("Music composition accessible to all with AI.")
+st.markdown(INSTRUCTIONS)
+
+# this must be up here for sidebar to use
+placeholder = st.empty()
+part_container = placeholder.container()
+
+# create sidebar
 
 st.sidebar.subheader("🤖 Compose a song with AI.")
 composer = st.sidebar.text_input(
@@ -462,24 +487,24 @@ composer = st.sidebar.text_input(
 )
 description = st.sidebar.text_area(
     "📝 Describe a song to compose.",
-    value="Beautiful, peaceful, calming"
+    value="happy, simple, yet dynamic, touching",
 )
 instruments = st.sidebar.multiselect(
     label="🪗 Select the instruments that the AI should use.",
     options=INSTRUMENT_OPTIONS,
-    default=["Piano", "Violin", "Flute"],
+    default=["Piano", "Guitar", "Violin"],
 )
 minutes = st.sidebar.slider(
     label="Choose how long, in minutes, the song should be.",
     min_value=0.0,
     max_value=5.0,
-    value=1.0,
+    value=0.5,
     step=0.05,
 )
 
 prompt_template = PromptTemplate(
     template=TEMPLATE,
-    input_variables=["composer", "description", "instruments", "minutes"],
+    input_variables=["composer", "minutes", "description", "instruments"],
 )
 prompt_inputs = dict(
     composer=composer,
@@ -489,59 +514,63 @@ prompt_inputs = dict(
 )
 prompt = prompt_template.format(**prompt_inputs)
 
-llm = None
 tab1, tab2 = st.sidebar.tabs(["Online LLMs", "OpenAI API"])
 with tab2:
     api_key = st.text_input("🔑 Paste in an OpenAI API key.", type="password")
     model_name = st.selectbox(
         label="Choose a model.",
         options=["gpt-3.5-turbo", "davinci", "curie", "babbage", "ada"],
-        index=1,
+        index=0,
     )
     temperature = st.slider(
         label="Choose how creative the AI should be.",
         min_value=0.0,
         max_value=1.0,
-        value=1.0,
+        value=0.7,
         step=0.05,
     )
     max_tokens = st.slider(
         label="Set a threshold for the max tokens used.",
         min_value=1,
-        max_value=2000,
-        value=256,
+        max_value=4096,
+        value=500,
         step=1,
     )
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-        llm = OpenAI(
-            model_name=model_name,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
 with tab1:
     pasted_output = st.text_area(
-        "📋 Paste in a composition from online LLMs to parse it. "
+        "📋 Paste in a composition from online LLMs to serialize it. "
         "Ensure the output format follows the example output below!"
     )
 
-if st.sidebar.button("🏃‍♀️ Run and add parts.", use_container_width=True):
+serialized_part_ids = {}
+if st.sidebar.button("🏃‍♀️ Clear all parts and run.", use_container_width=True):
+    if pasted_output and api_key:
+        st.sidebar.warning(
+            "Both pasted output and API key are provided; " "will use pasted output."
+        )
     if pasted_output:
-        eval_composition(pasted_output)
-    elif llm:
-        llm_chain = LLMChain(prompt=prompt_template, llm=llm)
-        api_output = llm_chain.run(**prompt_inputs)
-        with part_container:
-            try:
-                eval_composition(api_output)
-            except Exception as e:
-                print(api_output)
-                st.error(
-                    f"Parsing the output failed due to {e}: {api_output}"
-                )
+        serialized_part_ids = serialize_composition(pasted_output)
+    elif api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+        llm_class = ChatOpenAI if model_name == "gpt-3.5-turbo" else OpenAI
+        llm = llm_class(
+            model_name=model_name, temperature=temperature, max_tokens=max_tokens
+        )
+        with st.spinner():
+            llm_chain = LLMChain(prompt=prompt_template, llm=llm)
+            api_output = llm_chain.run(**prompt_inputs)
+            serialized_part_ids = serialize_composition(api_output)
 
 st.sidebar.markdown(f"💬 Here's a prompt template to copy:")
 st.sidebar.text(prompt)
+
+# create main
+with part_container:
+    for part_id in st.session_state.part_ids[:]:
+        if part_id in serialized_part_ids:
+            continue
+        create_part_inputs(part_id)
+
 st.divider()
 
 col1, col2, col3 = st.columns(3)
@@ -564,9 +593,11 @@ with col3:
 if output:
     format = st.selectbox(
         label="🗄️ Select the output format.",
-        options=["", "mp3", "midi", "png", "xml"],
+        options=["", "mp3", "midi", "png", "xml", "tinynotation"],
         key="output_format",
     )
+with st.spinner():
+    output_song()
+
 if clear:
-    st.session_state.part_ids = []
-output_song()
+    clear_parts()
