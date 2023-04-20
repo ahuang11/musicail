@@ -77,13 +77,13 @@ INSTRUCTIONS = """
     to compose beautiful songs.
 
     Start by filling out the sidebar; you can use the OpenAI API or paste a
-    composition output from an online LLM like ChatGPT, Bing Chat, or Bard.
+    composition output from an online LLM like ChatGPT, Bing Chat, or Bard,
+    using the prompt template as inspiration.
 
     Or you can manually add parts and enter musical notes in [tinynotation](
     https://web.mit.edu/music21/doc/usersGuide/usersGuide_16_tinyNotation.html).
 
     Valid notes can be as simple as `A B r C`, where `r` denotes a rest.
-
     You can also mix complex symbols with notes like
     `4/4 c4 trip{c8 d e} trip{f4 g a} b-1`.
 
@@ -271,9 +271,9 @@ def create_part_inputs(
         custom_label = states["custom_label"]
     else:
         part_id = uuid4().hex
-        musical_notes = musical_notes.strip() or ""
-        instrument_name = instrument_name.strip() or ""
-        custom_label = custom_label.strip() or ""
+        musical_notes = (musical_notes or "").strip()
+        instrument_name = (instrument_name or "").strip()
+        custom_label = (custom_label or "").strip()
         st.session_state.part_ids.append(part_id)
 
     part_keys = format_keys(part_id)
