@@ -196,7 +196,14 @@ def serialize_part(musical_notes: str, instrument_name: str, custom_label: str) 
     Returns:
         Part: A Music21 Part object containing the specified musical notes and instrument information.
     """
-    part = parse(musical_notes, format="tinyNotation") if musical_notes else Part()
+    if musical_notes:
+        try:
+            part = parse(musical_notes, format="tinyNotation", raiseExceptions=True)
+        except Exception as e:
+            st.warning(e)
+            part = parse(musical_notes, format="tinyNotation")
+    else:
+        part = Part()
     part.insert(0, getattr(instrument, instrument_name)())
     part.partName = name_part(instrument_name, custom_label)
     return part
