@@ -110,7 +110,7 @@ INSTRUCTIONS = """
 """
 
 
-def to_mp3(stream: Stream, key: str) -> None:
+def to_mp3(stream: Stream, st_prefix: st, key: str) -> None:
     """Converts a stream to MP3.
 
     Args:
@@ -120,7 +120,7 @@ def to_mp3(stream: Stream, key: str) -> None:
     with NamedTemporaryFile(suffix=".mp3") as temp_mp3_file:
         temp_mp3_path = temp_mp3_file.name
         subprocess.run([MSCORE_PATH, "-o", temp_mp3_path, temp_midi_path])
-        st.audio(temp_mp3_path, format="audio/mpeg")
+        st_prefix.audio(temp_mp3_path, format="audio/mpeg")
 
 
 def play_stream_inputs(stream: Stream, key: str):
@@ -130,13 +130,18 @@ def play_stream_inputs(stream: Stream, key: str):
         stream: The stream to play.
         key: The key for the button.
     """
-    label = "part" if "part" in key else "song"
-    if st.button(f"🔊 Listen to this {label}.", key=key, use_container_width=True):
+    if "part" in key:
+        label = "part"
+        st_prefix = st 
+    else:
+        label = "song"
+        st_prefix = st.sidebar
+    if st_prefix.button(f"🔊 Listen to this {label}.", key=key, use_container_width=True):
         if len(stream.flat.notes) == 0:
-            st.error(f"The {label} is empty! Please first enter some musical notes.")
+            st_prefix.error(f"The {label} is empty! Please first enter some musical notes.")
             return
         with st.spinner():
-            to_mp3(stream, key=key)
+            to_mp3(stream, st_prefix, key=key)
 
 
 @st.cache_data
@@ -256,20 +261,22 @@ def show_image(
     """
     if musical_notes:
         stream = parse(musical_notes, format="tinyNotation")
+        st_prefix = st 
     elif stream:
         musical_notes = stream.flat.notes
+        st_prefix = st.sidebar
 
-    if len(musical_notes) == 0:
-        st.error("The part is empty! Please first enter some musical notes.")
+    if musical_notes is None or len(musical_notes) == 0:
+        st_prefix.error("The part is empty! Please first enter some musical notes.")
         return
 
     try:
         image_path = stream.write("musicxml.png")
     except Exception as e:
-        st.error(f"Parsing error; cannot render the part: {e}.")
+        st_prefix.error(f"Parsing error; cannot render the part: {e}.")
         return
     with Image.open(image_path) as part_image:
-        return st.image(trim(part_image), use_column_width=True)
+        return st_prefix.image(trim(part_image), use_column_width=True)
 
 
 def create_part_inputs(
@@ -397,7 +404,7 @@ def output_song(song: Score):
     if format == "midi":
         temp_midi_path = song.write("midi")
         with open(temp_midi_path, "rb") as f:
-            st.download_button(
+            st.sidebar.download_button(
                 file_name="musicail.mid",
                 label="💾 Click to download MIDI.",
                 data=f.read(),
@@ -410,7 +417,7 @@ def output_song(song: Score):
         temp_xml_path = song.write("musicxml")
         with open(temp_xml_path, "r") as f:
             contents = f.read()
-            st.download_button(
+            st.sidebar.download_button(
                 file_name="musicail.xml",
                 label="💾 Click to download XML.",
                 data=contents,
@@ -492,15 +499,46 @@ if "output_format" not in st.session_state:
 
 # start laying out widgets
 
-st.title("🎶 MusicAIl")
-st.subheader("Music composition accessible to all with AI.")
-st.markdown(INSTRUCTIONS)
+st.sidebar.title("🎶 MusicAIl")
+st.sidebar.subheader("Music composition accessible to all with AI.")
+st.sidebar.markdown(INSTRUCTIONS)
 
-# this must be up here for sidebar to use
 placeholder = st.empty()
 part_container = placeholder.container()
 
-# create sidebar
+# create sidebar top
+with part_container:
+    for part_id in st.session_state.part_ids[:]:
+        create_part_inputs(part_id)
+
+if st.sidebar.button("🎻 Add a new part.", key="add_part", use_container_width=True):
+    with part_container:
+        part_id = create_part_inputs()
+
+clear = st.sidebar.button(
+    "🗑️ Clear all parts.",
+    key="clear_parts",
+    use_container_width=True,
+)
+output = st.sidebar.button(
+    "📦 Package all parts.",
+    key="output_song",
+    use_container_width=True,
+)
+song = create_song()
+play_stream_inputs(song, key="play_score")
+if output:
+    format = st.sidebar.selectbox(
+        label="🗄️ Select the output format.",
+        options=["", "midi", "png", "xml", "tinynotation"],
+        key="output_format",
+    )
+with st.spinner():
+    output_song(song=song)
+
+st.sidebar.divider()
+
+# create sidebar AI
 
 st.sidebar.subheader("🤖 Compose a song with AI.")
 composer = st.sidebar.text_input(
@@ -588,45 +626,6 @@ if st.sidebar.button("🏃‍♀️ Clear all parts and run.", use_container_wid
 
 st.sidebar.markdown(f"💬 Here's a prompt template to copy:")
 st.sidebar.code(prompt, language="text")
-
-# create main
-with part_container:
-    for part_id in st.session_state.part_ids[:]:
-        if part_id in serialized_part_ids:
-            continue
-        create_part_inputs(part_id)
-
-st.divider()
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    if st.button("🎻 Add a new part.", key="add_part", use_container_width=True):
-        with part_container:
-            part_id = create_part_inputs()
-with col2:
-    output = st.button(
-        "📦 Package all parts.",
-        key="output_song",
-        use_container_width=True,
-    )
-with col3:
-    clear = st.button(
-        "🗑️ Clear all parts.",
-        key="clear_parts",
-        use_container_width=True,
-    )
-
-song = create_song()
-play_stream_inputs(song, key="play_score")
-if output:
-    format = st.selectbox(
-        label="🗄️ Select the output format.",
-        options=["", "midi", "png", "xml", "tinynotation"],
-        key="output_format",
-    )
-with st.spinner():
-    output_song(song=song)
-
 
 if clear:
     clear_parts()
