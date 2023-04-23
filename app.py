@@ -1,6 +1,8 @@
 import os
+import re
 import random
 import subprocess
+import json
 import sys
 from tempfile import NamedTemporaryFile
 from textwrap import dedent
@@ -9,7 +11,12 @@ from uuid import uuid4
 
 import streamlit as st
 from langchain.chat_models import ChatOpenAI
-from langchain import LLMChain, OpenAI, PromptTemplate
+from langchain import LLMChain
+from langchain.prompts import (
+    SystemMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+    ChatPromptTemplate,
+)
 from music21 import environment, instrument
 from music21.converter import parse
 from music21.stream import Part, Score, Stream
@@ -37,47 +44,46 @@ def is_subclass(obj: object) -> bool:
     except TypeError:
         return False
 
-TEMPLATE = dedent(
+
+SYSTEM_TEMPLATE = dedent(
     """
-    Here's a challenge for you, my helpful chat assistant.
+    Here's a fun challenge for you, my helpful assistant.
 
-    Imagine you are a world-class, renowned composer, {composer}.
+    Imagine you are a world-class, renowned composer, {composer},
+    known for your in-depth knowledge about musical theory.
 
-    Compose a new, memorable song, with a duration of {minutes} minutes,
-    based on this description: "{description}".
-
-    Each part should use one of these instruments: "{instruments}",
-    and will be played simultaneously.
-
-    Think carefully, step by step, critiquing and revising the composition
-    as you go, basing it off musical theory, ensuring each part
-    complements one another. Articulate your thoughts.
-
-    When you are ready, provide me with the final composition
-    using tinynotation wrapped in "```";
-    each instrument part on its own line, separated by "---".
-
-    Format each part with a unique title first,
-    instrument name second (do not modify instrument name),
-    and music notes third, separated by ":".
-
-    Be sure to add flair by using "r" for rest,
-    "trip" for triplet, and "quad" for quadruplet.
-
-    Your composition should be formatted like:
+    You will ONLY output your masterpiece as a list of JSON
+    in tinynotation format, and wrap it within a code fence.
     ```
-    Dawn of Vi : Viola : 4/4 c4 trip{{c8 d e}} trip{{f4 g a}} b-1
-    ---
-    Ya : PipeOrgan : 4/4 E4 r f# g=lastG trip{{b-8 a g}} c
+    [
+        {{
+            "title": "Fancy Viola",
+            "instrument": "Viola",
+            "notes": "4/4 c4 trip{{c8 d e}} trip{{f4 g a}} b-1"
+        }},
+        {{
+            "title": "Drumming Along",
+            "instrument": "BassDrum",
+            "notes": "4/4 E4 r c'1. c'''2. c~."
+        }}
+    ]
     ```
+    Use note names: `a,b,c,d,e,f,g`, and `r` for rest.
+    Notate sharps as `#`, flats as `-` (not b), and naturals as `n`.
+    Suffix notes with numbers to indicate note length.
+    Use `~` for ties and `.` for dotted notes.
+    Use `trip{{c4 d8}}` for triplets and
+    `quad{{c16 d e8}}` for quadruplets.
     """
 ).strip()
-
-DEFAULT_DESCRIPTION = (
-    "Grandiose, suspenseful, captivating, dynamic, non-repetitive, "
-    "multi-instrumental with emotional solos, anticipation, "
-    "with a grand finale"
+HUMAN_TEMPLATE = dedent(
+    """
+    Compose a musical masterpiece lasting {minutes} with multiple
+    instrument parts, containing {instruments} matching "{description}".
+    """
 )
+
+DEFAULT_DESCRIPTION = "beautiful, elegant, engaging"
 
 INSTRUMENT_OPTIONS = [
     var_name
@@ -89,9 +95,6 @@ INSTRUMENT_OPTIONS = [
 
 
 INSTRUCTIONS = """
-    With MusicAIl, you *don't need* to be an expert in music theory
-    to compose beautiful songs.
-
     A video demo can be found [here](
     https://twitter.com/i/status/1649163391406317569).
 
@@ -100,7 +103,7 @@ INSTRUCTIONS = """
     using the prompt template as inspiration. When you're ready, press run.
 
     Or you can manually add parts and enter musical notes in [tinynotation](
-    https://web.mit.edu/music21/doc/usersGuide/usersGuide_16_tinyNotation.html).
+    http://web.mit.edu/music21/doc/moduleReference/moduleTinyNotation.html).
 
     Valid notes can be as simple as `A B r C`, where `r` denotes a rest.
     You can also mix complex symbols with notes like
@@ -132,13 +135,17 @@ def play_stream_inputs(stream: Stream, key: str):
     """
     if "part" in key:
         label = "part"
-        st_prefix = st 
+        st_prefix = st
     else:
         label = "song"
         st_prefix = st.sidebar
-    if st_prefix.button(f"🔊 Listen to this {label}.", key=key, use_container_width=True):
+    if st_prefix.button(
+        f"🔊 Listen to this {label}.", key=key, use_container_width=True
+    ):
         if len(stream.flat.notes) == 0:
-            st_prefix.error(f"The {label} is empty! Please first enter some musical notes.")
+            st_prefix.error(
+                f"The {label} is empty! Please first enter some musical notes."
+            )
             return
         with st.spinner():
             to_mp3(stream, st_prefix, key=key)
@@ -205,7 +212,7 @@ def serialize_part(musical_notes: str, instrument_name: str, custom_label: str) 
         try:
             part = parse(musical_notes, format="tinyNotation", raiseExceptions=True)
         except Exception as e:
-            st.warning(e)
+            st.warning(f"{e} Music will stop playing after this note.")
             part = parse(musical_notes, format="tinyNotation")
     else:
         part = Part()
@@ -261,7 +268,7 @@ def show_image(
     """
     if musical_notes:
         stream = parse(musical_notes, format="tinyNotation")
-        st_prefix = st 
+        st_prefix = st
     elif stream:
         musical_notes = stream.flat.notes
         st_prefix = st.sidebar
@@ -427,18 +434,10 @@ def output_song(song: Score):
 
 
 def serialize_composition(composition: str) -> Set[str]:
-    """serializeuate a music composition in a specific format and create input fields for each part.
+    """Serializes a music composition in a specific format and create input fields for each part.
 
     Args:
-        composition: A string representing a music composition in the following format:
-            ```
-            <instrument_name>: <musical_notes>
-            ---
-            <instrument_name>: <musical_notes>
-            ...
-            ```
-            where `---` separates different parts, `<instrument_name>` is the name of the instrument for the corresponding
-            part, and `<musical_notes>` is a string of musical notes in the TinyNotation format.
+        composition: A string containing the composition to serialize as a list of JSON.
 
     Returns:
         None.
@@ -447,36 +446,25 @@ def serialize_composition(composition: str) -> Set[str]:
     try:
         composition = composition.strip()
         if "```" in composition:
-            composition = composition.split("```")[1]
-        # sometimes, models don't listen :(
-        sep = "---"
-        if sep not in composition:
-            sep = "\n\n"
-        if sep not in composition:
-            sep = "\n"
-        parts = composition.strip().split(sep)
-    except ValueError:
+            composition = composition.split("```")[1].strip()
+        composition = composition.replace("|", "")
+        parts = json.loads(composition)
+    except ValueError as e:
         st.sidebar.error(
             f"The composition is not formatted correctly {composition}; "
-            "please ensure it follows the example output."
+            f"please ensure it follows the example output. {e}"
         )
         return
 
     part_ids = set()
     for part in parts:
-        if not part.strip():
-            continue
-        try:
-            components = part.strip().split(":", maxsplit=3)
-            custom_label, instrument_name, musical_notes = components[:3]
-        except ValueError:
-            st.sidebar.warning(f"{part} cannot be parsed; skipping...")
-            continue
-        part_id = create_part_inputs(
-            musical_notes=musical_notes,
-            instrument_name=instrument_name,
-            custom_label=custom_label,
-        )
+        notes = re.sub(r"(?<=[a-zA-Z])[13579](?=\D|$)", "4", part["notes"])
+        part = {
+            "musical_notes": notes,
+            "instrument_name": part["instrument"],
+            "custom_label": part["title"],
+        }
+        part_id = create_part_inputs(**part)
         part_ids.add(part_id)
     return part_ids
 
@@ -511,6 +499,81 @@ with part_container:
     for part_id in st.session_state.part_ids[:]:
         create_part_inputs(part_id)
 
+# create sidebar AI
+
+st.sidebar.subheader("🤖 Compose a song with AI.")
+composer = st.sidebar.text_input("🧑‍🎤 Enter an inspirational composer.", value="")
+description = st.sidebar.text_area(
+    "📝 Describe a song to compose.",
+    value=DEFAULT_DESCRIPTION,
+)
+instruments = st.sidebar.multiselect(
+    label="🪗 Select the instruments that the AI should use.",
+    options=INSTRUMENT_OPTIONS,
+    default=["Piano", "Guitar", "BassDrum"],
+)
+minutes = st.sidebar.slider(
+    label="Choose how long, in minutes, the song should be.",
+    min_value=0.0,
+    max_value=5.0,
+    value=1.0,
+    step=0.05,
+)
+
+system_template = SystemMessagePromptTemplate.from_template(template=SYSTEM_TEMPLATE)
+human_template = HumanMessagePromptTemplate.from_template(HUMAN_TEMPLATE)
+chat_template = ChatPromptTemplate.from_messages([system_template, human_template])
+prompt_inputs = dict(
+    composer=composer,
+    description=description,
+    instruments=", ".join(instruments),
+    minutes=minutes,
+)
+prompt = chat_template.format(**prompt_inputs)
+
+tab1, tab2 = st.sidebar.tabs(["OpenAI API", "Online LLMs"])
+with tab1:
+    api_key = st.text_input("🔑 Paste in an OpenAI API key.", type="password")
+    temperature = st.slider(
+        label="Choose how creative the AI should be.",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.7,
+        step=0.05,
+    )
+    max_tokens = st.slider(
+        label="Set a threshold for the max tokens used.",
+        min_value=1,
+        max_value=4096,
+        value=1000,
+        step=1,
+    )
+with tab2:
+    pasted_output = st.text_area(
+        "📋 Paste in a composition from online LLMs to serialize it. "
+        "Ensure the output format follows the example output below!"
+    )
+
+serialized_part_ids = {}
+if st.sidebar.button("🏃‍♀️ Clear all parts and run.", use_container_width=True):
+    if pasted_output and api_key:
+        st.sidebar.warning(
+            "Both pasted output and API key are provided; " "will use pasted output."
+        )
+    if pasted_output:
+        serialized_part_ids = serialize_composition(pasted_output)
+    elif api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+        llm = ChatOpenAI(
+            model_name="gpt-3.5-turbo", temperature=temperature, max_tokens=max_tokens
+        )
+        with st.spinner():
+            llm_chain = LLMChain(prompt=chat_template, llm=llm)
+            api_output = llm_chain.run(**prompt_inputs)
+            serialized_part_ids = serialize_composition(api_output)
+
+st.sidebar.divider()
+
 if st.sidebar.button("🎻 Add a new part.", key="add_part", use_container_width=True):
     with part_container:
         part_id = create_part_inputs()
@@ -536,96 +599,8 @@ if output:
 with st.spinner():
     output_song(song=song)
 
-st.sidebar.divider()
-
-# create sidebar AI
-
-st.sidebar.subheader("🤖 Compose a song with AI.")
-composer = st.sidebar.text_input(
-    "🧑‍🎤 Enter an inspirational composer.", value=""
-)
-description = st.sidebar.text_area(
-    "📝 Describe a song to compose.",
-    value=DEFAULT_DESCRIPTION,
-)
-instruments = st.sidebar.multiselect(
-    label="🪗 Select the instruments that the AI should use.",
-    options=INSTRUMENT_OPTIONS,
-    default=["Piano", "Guitar", "BassDrum"],
-)
-minutes = st.sidebar.slider(
-    label="Choose how long, in minutes, the song should be.",
-    min_value=0.0,
-    max_value=5.0,
-    value=1.0,
-    step=0.05,
-)
-
-prompt_template = PromptTemplate(
-    template=TEMPLATE,
-    input_variables=["composer", "minutes", "description", "instruments"],
-)
-prompt_inputs = dict(
-    composer=composer,
-    description=description,
-    instruments=", ".join(instruments),
-    minutes=minutes,
-)
-prompt = prompt_template.format(**prompt_inputs)
-
-tab1, tab2 = st.sidebar.tabs(["Online LLMs", "OpenAI API"])
-with tab2:
-    st.warning(
-        "⚠️ This feature may not work well due to extraneous output from the model. "
-        "It's recommended to chat with an Online LLM and paste the final composition."
-    )
-    api_key = st.text_input("🔑 Paste in an OpenAI API key.", type="password")
-    model_name = st.selectbox(
-        label="Choose a model.",
-        options=["gpt-3.5-turbo", "davinci", "curie", "babbage", "ada"],
-        index=0,
-    )
-    temperature = st.slider(
-        label="Choose how creative the AI should be.",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.7,
-        step=0.05,
-    )
-    max_tokens = st.slider(
-        label="Set a threshold for the max tokens used.",
-        min_value=1,
-        max_value=4096,
-        value=500,
-        step=1,
-    )
-with tab1:
-    pasted_output = st.text_area(
-        "📋 Paste in a composition from online LLMs to serialize it. "
-        "Ensure the output format follows the example output below!"
-    )
-
-serialized_part_ids = {}
-if st.sidebar.button("🏃‍♀️ Clear all parts and run.", use_container_width=True):
-    if pasted_output and api_key:
-        st.sidebar.warning(
-            "Both pasted output and API key are provided; " "will use pasted output."
-        )
-    if pasted_output:
-        serialized_part_ids = serialize_composition(pasted_output)
-    elif api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-        llm_class = ChatOpenAI if model_name == "gpt-3.5-turbo" else OpenAI
-        llm = llm_class(
-            model_name=model_name, temperature=temperature, max_tokens=max_tokens
-        )
-        with st.spinner():
-            llm_chain = LLMChain(prompt=prompt_template, llm=llm)
-            api_output = llm_chain.run(**prompt_inputs)
-            serialized_part_ids = serialize_composition(api_output)
+if clear:
+    clear_parts()
 
 st.sidebar.markdown(f"💬 Here's a prompt template to copy:")
 st.sidebar.code(prompt, language="text")
-
-if clear:
-    clear_parts()
