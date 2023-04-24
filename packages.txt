@@ -1,2 +1,2 @@
 musescore-general-soundfont
-musescore-stretch-backports
+musescore3
