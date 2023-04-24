@@ -1,2 +1,1 @@
-musescore-general-soundfont
-musescore3
+musescore3-sid
