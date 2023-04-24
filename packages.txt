@@ -1,1 +1,1 @@
-musescore3-sid
+musescore-snapshot
