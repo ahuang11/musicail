@@ -1,1 +1,1 @@
-musescore3-buster-backports
+-m musescore
