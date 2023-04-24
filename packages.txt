@@ -1,1 +1,2 @@
-htop
+musescore-general-soundfont
+musescore
