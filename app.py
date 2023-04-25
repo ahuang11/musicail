@@ -498,6 +498,8 @@ part_container = placeholder.container()
 with part_container:
     for part_id in st.session_state.part_ids[:]:
         create_part_inputs(part_id)
+    if len(st.session_state.part_ids) == 0:
+        st.caption("Expand the sidebar to get started!")
 
 # create sidebar AI
 
