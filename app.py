@@ -78,12 +78,12 @@ SYSTEM_TEMPLATE = dedent(
 ).strip()
 HUMAN_TEMPLATE = dedent(
     """
-    Compose a musical masterpiece lasting {minutes} with multiple
+    Compose a musical masterpiece lasting {minutes} minutes with multiple
     instrument parts, containing {instruments} matching "{description}".
     """
 )
 
-DEFAULT_DESCRIPTION = "beautiful, elegant, engaging"
+DEFAULT_DESCRIPTION = "sombre, melancholic, journey, adventure"
 
 INSTRUMENT_OPTIONS = [
     var_name
@@ -605,4 +605,4 @@ if clear:
     clear_parts()
 
 st.sidebar.markdown(f"💬 Here's a prompt template to copy:")
-st.sidebar.code(prompt, language="text")
+st.sidebar.code(prompt.replace("System:", "").replace("Human": "")), language="text")
