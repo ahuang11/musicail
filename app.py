@@ -605,4 +605,4 @@ if clear:
     clear_parts()
 
 st.sidebar.markdown(f"💬 Here's a prompt template to copy:")
-st.sidebar.code(prompt.replace("System:", "").replace("Human": "")), language="text")
+st.sidebar.code(prompt.replace("System:", "").replace("Human:", ""), language="text")
